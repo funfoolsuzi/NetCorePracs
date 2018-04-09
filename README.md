@@ -1,0 +1,1 @@
+### Practice usage of some interesting features in c#/.netCore
