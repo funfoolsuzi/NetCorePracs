@@ -14,6 +14,7 @@ namespace AsyncSocketClient
         }
 
         static void StartClient() {
+            bool stop = false;
 
             // get dest ip address
             String ipString;
@@ -43,6 +44,16 @@ namespace AsyncSocketClient
             Console.WriteLine("Connected to {0}", endpoint);
 
             // ... receiving thread taking off
+            new Thread(() => {
+                while(!stop) {
+                    if(client.Poll(3000000, SelectMode.SelectRead)) {
+                        Byte[] buf = new Byte[2096];
+                        client.ReceiveAsync(buf, SocketFlags.None).ContinueWith((bytesRead) => {
+                            Console.WriteLine($"{client.RemoteEndPoint} said: {System.Text.Encoding.ASCII.GetString(buf)}");
+                        });
+                    }
+                }
+            }).Start();
 
             while(true) {
                 Console.Write("messege:");

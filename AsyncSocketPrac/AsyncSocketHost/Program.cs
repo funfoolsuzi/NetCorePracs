@@ -25,46 +25,58 @@ namespace AsyncSocketHost
                 IPEndPoint endpoint = new IPEndPoint(IPAddress.Parse("0.0.0.0"), 9999);
                 host.Bind(endpoint);
                 host.Listen(5);
-                Console.WriteLine("Listening on {0}", endpoint);
+                Console.WriteLine($"Listening on {endpoint}");
                 Boolean stop = false;
                 List<Socket> connections = new List<Socket>();
-                Thread listenThread = new Thread((state) => {
+
+                // listening thread
+                Thread listenThread = new Thread(() => {
                     // c# lambda functions do form closure!
                     while(!stop) {
-                        if(!host.Poll(3000000, SelectMode.SelectRead)) continue;
-                        host.BeginAccept((ar)=>{
-                            Socket newConnection = host.EndAccept(ar);
-                            Console.WriteLine(newConnection.RemoteEndPoint);
-                            mut.WaitOne();
-                            connections.Add(newConnection);
-                            mut.ReleaseMutex();
-                        }, null);
+                        List<Socket> cloned = new List<Socket>();
+                        cloned.Add(host);
+                        foreach(Socket soc in connections) {
+                            cloned.Add(soc);
+                        }
+                        Socket.Select(cloned, null, null, 3000000);
+                        cloned.ForEach((con) => {
+                            if(con.Equals(host)) {
+                                host.BeginAccept((ar)=>{
+                                    Socket newConnection = host.EndAccept(ar);
+                                    Console.WriteLine($"New connection from {newConnection.RemoteEndPoint}");
+                                    mut.WaitOne();
+                                    connections.Add(newConnection);
+                                    mut.ReleaseMutex();
+                                }, null);
+                            } else {
+                                byte[] buf = new byte[2096];
+                                con.ReceiveAsync(buf, SocketFlags.None).ContinueWith((byteReceived)=>{
+                                    Console.WriteLine($"{con.RemoteEndPoint} said: {Encoding.Default.GetString(buf)}");
+                                });
+                            }
+                        });
                     }
                 });
                 listenThread.Start();
 
                 String response;
+
                 while(!(response = Console.ReadLine().ToLower()).Equals("quit")) {
                     if (response.Equals("list")) {
                         for(int idx = 0; idx < connections.Count; idx++) {
-                            Console.WriteLine(
-                                "{0} {1} Available:{2}",
-                                idx,
-                                connections[idx].RemoteEndPoint,
-                                connections[idx].Available
-                            );
+                            Console.WriteLine($"{idx} {connections[idx].RemoteEndPoint} Available:{connections[idx].Available}");
                         }
-                    } else if (response.Equals("receive")) {
-                        Console.Write("connection id:");
-                        try {
-                            Socket con = connections[Int32.Parse(Console.ReadLine())];
-                            byte[] buf = new byte[2096];
-                            con.ReceiveAsync(buf, SocketFlags.None).ContinueWith((byteReceived)=>{
-                                Console.WriteLine(Encoding.Default.GetString(buf));
-                            });
-                        } catch (Exception e) {
-                            Console.WriteLine("invalid connection id.");
-                        }
+                    // } else if (response.Equals("receive")) {
+                    //     Console.Write("connection id:");
+                    //     try {
+                    //         Socket con = connections[Int32.Parse(Console.ReadLine())];
+                    //         byte[] buf = new byte[2096];
+                    //         con.ReceiveAsync(buf, SocketFlags.None).ContinueWith((byteReceived)=>{
+                    //             Console.WriteLine(Encoding.Default.GetString(buf));
+                    //         });
+                    //     } catch (Exception e) {
+                    //         Console.WriteLine("invalid connection id.");
+                    //     }
                     }
                 }
                 stop = true;
